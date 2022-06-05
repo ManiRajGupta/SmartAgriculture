@@ -106,7 +106,6 @@ class _HomeState extends State<Home> {
               color: Colors.black,
               fontWeight: FontWeight.bold,
               letterSpacing: 2.0,
-            fontFamily: 'Hind',
           ),
         ),
         actions: [
