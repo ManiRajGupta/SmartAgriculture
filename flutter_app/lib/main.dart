@@ -1,17 +1,99 @@
-// import 'package:flutter/cupertino.dart';
-// import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-// import 'package:weather_icons/weather_icons.dart';
-// import 'package:weather_icons_example/util.dart';
+import 'package:mqtt_client/mqtt_client.dart';
+import 'package:mqtt_client/mqtt_server_client.dart';
 
 
-void main() => runApp(const MaterialApp(
-  home:Home(),
+void main() {
+  runApp(const MaterialApp(
+    home: Home(),
+  ));
+}
 
-));
-
-class Home extends StatelessWidget {
+class Home extends StatefulWidget {
   const Home({Key? key}) : super(key: key);
+
+  @override
+  _HomeState createState() => _HomeState();
+}
+
+class _HomeState extends State<Home> {
+  MqttServerClient? client;
+  MqttConnectionState? connectionState;
+  Subscription? subscription;
+
+  _HomeState() {
+    _connect();
+  }
+
+  double _temp = 20;
+
+  void _connect() async {
+    client = MqttServerClient.withPort('broker.emqx.io', 'flutter_client', 1883);
+    if (client == null) return;
+    /* client?.logging(on: true); */
+    client?.onConnected = () => print('[MQTT] connected');
+    client?.onDisconnected = _onDisconnected;
+    client?.pongCallback = () => print('[MQTT] ping-pong');
+
+    final connMessage = MqttConnectMessage()
+        .withClientIdentifier('Mqtt_MyClientUniqueId')
+        .startClean()
+        .keepAliveFor(60)
+        .withWillTopic('client/status')
+        .withWillMessage('Mobile Disconnected')
+        .withWillQos(MqttQos.atLeastOnce);
+
+    client?.connectionMessage = connMessage;
+    try {
+      await client?.connect();
+
+      print('[MQTT client] connected');
+      setState(() {
+        connectionState = client?.connectionState;
+      });
+
+      client?.updates.listen(_onMessage);
+
+      subscription = client?.subscribe("raspberry/temperature", MqttQos.exactlyOnce);
+      //client.subscribe("raspberry/humidity", MqttQos.exactlyOnce);
+      subscription = client?.subscribe("compute/result", MqttQos.exactlyOnce);
+
+    } catch (e) {
+      print('Exception: $e');
+      client?.disconnect();
+    }
+  }
+
+  void _onMessage(List<MqttReceivedMessage<MqttMessage>> c) {
+    final recMess = c[0].payload as MqttPublishMessage;
+    final pt =
+        MqttPublishPayload.bytesToStringAsString(recMess.payload.message);
+
+    print('[MQTT] On topic <${c[0].topic}> recieved msg <-- $pt -->');
+
+    setState(() {
+      if (c[0].topic == 'compute/result')
+        print('compute_result: ${pt}');
+      else if (c[0].topic == 'raspberry/temperature')
+        _temp = double.parse(pt);
+    });
+  }
+
+  void _disconnect() {
+    print('[MQTT client] _disconnect()');
+    client?.disconnect();
+    _onDisconnected();
+  }
+  void _onDisconnected() {
+    setState(() {
+      //topics.clear();
+      connectionState = client?.connectionState;
+      client = null;
+      //subscription?.cancel();
+      subscription = null;
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -123,7 +205,7 @@ class Home extends StatelessWidget {
                     color: Colors.amber,
                   ),
                   Text(
-                    "Today: sunny with 39 degree temp",
+                    "Today: sunny with ${_temp.toStringAsFixed(1)} degree temp",
                     style: TextStyle(
                       color: Colors.green[800],
                       fontSize: 15.0,
